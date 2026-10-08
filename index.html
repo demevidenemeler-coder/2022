@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0e4f4c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Prisma">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<title>Prisma Block Puzzle</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<canvas id="game"></canvas>
+<div id="safe"></div>
+
+<!-- Kopfzeile -->
+<header id="hud">
+  <div class="hud-row">
+    <div class="pill" id="bestPill" title="Bestwert">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3.2 17.5h17.6l1.7-10-5.6 4L12 3.5 7.1 11.5l-5.6-4 1.7 10z"/><rect fill="currentColor" x="3.2" y="19" width="17.6" height="2.2" rx="1.1"/></svg>
+      <span id="best">0</span>
+    </div>
+    <div class="hud-btns">
+      <button class="icon-btn" id="btnThemes" aria-label="Designs">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.4a3.6 3.6 0 0 0 3.6-3.6C21 6.5 17 3 12 3z"/><circle fill="currentColor" cx="7.5" cy="12" r="1.3"/><circle fill="currentColor" cx="9.8" cy="7.8" r="1.3"/><circle fill="currentColor" cx="14.4" cy="7.2" r="1.3"/><circle fill="currentColor" cx="17.4" cy="10.6" r="1.3"/></svg>
+      </button>
+      <button class="icon-btn" id="btnSettings" aria-label="Einstellungen">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="score-wrap">
+    <div id="score">0</div>
+    <div id="streak" class="streak"><span id="streakTxt"></span><span id="pips" class="pips" title="Züge, bis die Serie endet"><i></i><i></i><i></i></span></div>
+  </div>
+</header>
+
+<!-- Startbildschirm -->
+<div class="overlay center soft open" id="ovStart">
+  <div class="start">
+    <div class="logo" id="logo"><span>P</span><span>R</span><span>I</span><span>S</span><span>M</span><span>A</span></div>
+    <div class="tagline">Block Puzzle</div>
+    <div class="start-best">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3.2 17.5h17.6l1.7-10-5.6 4L12 3.5 7.1 11.5l-5.6-4 1.7 10z"/><rect fill="currentColor" x="3.2" y="19" width="17.6" height="2.2" rx="1.1"/></svg>
+      <span id="startBest">0</span>
+    </div>
+    <button class="btn primary big" id="btnPlay">Spielen</button>
+    <button class="btn ghost" id="btnStartThemes">Designs</button>
+  </div>
+</div>
+
+<!-- Spielende -->
+<div class="overlay center" id="ovOver">
+  <div class="modal">
+    <div class="over-crown">
+      <svg viewBox="0 0 24 24" width="54" height="54" aria-hidden="true"><path fill="currentColor" d="M3.2 17.5h17.6l1.7-10-5.6 4L12 3.5 7.1 11.5l-5.6-4 1.7 10z"/><rect fill="currentColor" x="3.2" y="19" width="17.6" height="2.2" rx="1.1"/></svg>
+    </div>
+    <h2 id="overTitle">Keine Züge mehr</h2>
+    <div class="over-label">Punkte</div>
+    <div class="over-score" id="overScore">0</div>
+    <div class="over-best">Bestwert <b id="overBest">0</b></div>
+    <div class="over-stats">
+      <div><b id="stLines">0</b><span>Reihen</span></div>
+      <div><b id="stCombo">–</b><span>Beste Combo</span></div>
+      <div><b id="stDesigns">0</b><span>Designs</span></div>
+    </div>
+    <button class="btn primary big" id="btnAgain">Nochmal spielen</button>
+    <button class="btn ghost" id="btnOverThemes">Designs</button>
+  </div>
+</div>
+
+<!-- Designs -->
+<div class="overlay top" id="ovThemes">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2>Designs</h2>
+      <button class="icon-btn close" data-close aria-label="Schließen">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <label class="row auto-row"><span>Bei Combos wechseln</span><input type="checkbox" class="switch" id="optAuto"></label>
+    <div class="theme-grid" id="themeGrid"></div>
+  </div>
+</div>
+
+<!-- Einstellungen -->
+<div class="overlay top" id="ovSettings">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2>Einstellungen</h2>
+      <button class="icon-btn close" data-close aria-label="Schließen">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <label class="row"><span>Ton</span><input type="checkbox" class="switch" id="optSound"></label>
+    <label class="row"><span>Vibration</span><input type="checkbox" class="switch" id="optHaptic"></label>
+    <label class="row"><span>Musik</span><input type="checkbox" class="switch" id="optMusic"></label>
+    <div class="tracks" id="optTrack"></div>
+    <button class="btn primary" id="btnNew">Neues Spiel</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+<canvas id="fxTop"></canvas>
+
+<script src="js/themes.js"></script>
+<script src="js/themes2.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
