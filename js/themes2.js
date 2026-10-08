@@ -1199,7 +1199,99 @@
       lightBoard('#ffffff', '#eef7fe', 'rgba(60,140,210,0.09)', '#ffffff', 'rgba(40,100,170,0.3)', 0.28), null, CALM_FX)
   );
 
-  // Unruhige Designs (dichte Muster, Blinken, viele Linien) sind abgeschaltet. Zum Wiedereinschalten die Kennung hier entfernen.
-  const OFF = ['neon', 'lava', 'pixel', 'bricks', 'knit', 'popart', 'obst', 'monster', 'platine', 'kathedrale', 'marrakesch', 'hologramm', 'disco', 'tusche'];
+  /* =====================================================================
+     Süße Designs: Pastellfarben, weiche Formen, Süßigkeiten
+     ===================================================================== */
+  // Macaron: zwei weiche Schalen mit heller Füllung
+  B.macaron = function (ctx, s, c) {
+    const w = s * 0.86, x = (s - w) / 2, h = s * 0.34, r = h * 0.5, mid = s * 0.5;
+    ctx.save(); shadow(ctx, s, rgba(darken(c, 0.6), 0.4));
+    rr(ctx, x, mid + s * 0.05, w, h, r); ctx.fillStyle = lin(ctx, 0, mid, 0, mid + h, [darken(c, 0.06), darken(c, 0.24)]); ctx.fill();
+    ctx.restore();
+    rr(ctx, x + w * 0.05, mid - s * 0.06, w * 0.9, s * 0.12, s * 0.04); ctx.fillStyle = lighten(c, 0.62); ctx.fill();
+    rr(ctx, x, mid - s * 0.05 - h, w, h, r); ctx.fillStyle = lin(ctx, 0, mid - h, 0, mid, [lighten(c, 0.18), darken(c, 0.04)]); ctx.fill();
+    rr(ctx, x + w * 0.12, mid - s * 0.03 - h, w * 0.76, h * 0.32, h * 0.16); ctx.fillStyle = 'rgba(255,255,255,0.38)'; ctx.fill();
+  };
+  // Seifenblase: durchscheinende Kugel mit hellem Rand und Glanz
+  B.bubble = function (ctx, s, c) {
+    const cx = s / 2, cy = s / 2, R = s * 0.43;
+    disc(ctx, cx, cy, R);
+    ctx.fillStyle = rad(ctx, cx, cy, R, [rgba(lighten(c, 0.45), 0.4), rgba(c, 0.5), rgba(darken(c, 0.08), 0.9)]); ctx.fill();
+    ctx.lineWidth = Math.max(1, s * 0.03); ctx.strokeStyle = rgba(lighten(c, 0.6), 0.95); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, R * 0.8, 0.5, 1.7); ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = s * 0.045; ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx - R * 0.36, cy - R * 0.4, R * 0.3, R * 0.17, -0.7, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fill();
+  };
+  // Gummibonbon: durchscheinender, glänzender Würfel
+  B.gummi = function (ctx, s, c) {
+    const { x, y, w, r } = body(ctx, s, { g: 0.07, r: 0.26, stops: [lighten(c, 0.1), c, darken(c, 0.18)], sh: rgba(darken(c, 0.5), 0.3) });
+    rr(ctx, x + w * 0.12, y + w * 0.12, w * 0.76, w * 0.76, r * 0.8); ctx.fillStyle = rgba(lighten(c, 0.3), 0.35); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x + w * 0.32, y + w * 0.26, w * 0.2, w * 0.1, -0.5, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fill();
+    rr(ctx, x, y, w, w, r); ctx.strokeStyle = rgba(darken(c, 0.3), 0.3); ctx.lineWidth = Math.max(1, s * 0.015); ctx.stroke();
+  };
+  // Hintergrund-Zutaten für die süßen Designs: Regenbogen, Streusel, Blümchen
+  function sweetBg(o) {
+    const base = calmBg(o);
+    return function (ctx, W, H, rnd) {
+      base(ctx, W, H, rnd);
+      const u = Math.min(W, H);
+      if (o.rainbow) {
+        const cols = ['#ffb3b3', '#ffd3a8', '#fff2b0', '#c9f0c4', '#b8e4ff', '#c9c6ff', '#e5c4ff'], lw = W * 0.034;
+        ctx.lineWidth = lw; ctx.globalAlpha = 0.5;
+        cols.forEach((c, i) => { ctx.beginPath(); ctx.arc(W * 0.5, H * 0.6, W * 0.92 - i * lw, Math.PI, TAU); ctx.strokeStyle = c; ctx.stroke(); });
+        ctx.globalAlpha = 1;
+      }
+      if (o.dots)
+        for (let i = 0; i < o.dots.n; i++) {
+          ctx.fillStyle = rgba(o.dots.colors[(rnd() * o.dots.colors.length) | 0], o.dots.alpha);
+          disc(ctx, rnd() * W, rnd() * H, u * (o.dots.r[0] + rnd() * (o.dots.r[1] - o.dots.r[0]))); ctx.fill();
+        }
+      if (o.flowers)
+        for (let i = 0; i < o.flowers; i++) {
+          const x = rnd() * W, y = H * (0.72 + rnd() * 0.26), r = u * (0.008 + rnd() * 0.008);
+          ctx.fillStyle = ['#ffffff', '#ffd1e0', '#fff0a8', '#d6e8ff'][(rnd() * 4) | 0];
+          for (let k = 0; k < 5; k++) { disc(ctx, x + Math.cos((k / 5) * TAU) * r, y + Math.sin((k / 5) * TAU) * r, r * 0.75); ctx.fill(); }
+          ctx.fillStyle = '#ffd34d'; disc(ctx, x, y, r * 0.5); ctx.fill();
+        }
+    };
+  }
+  const PASTEL = ['#ff8da1', '#ffb47a', '#ffe182', '#9ddf9a', '#8ad4f2', '#9aa8ff', '#d4a1ff'];
+  const SPRINKLES = ['#ff9fb5', '#ffd27a', '#9fe0a8', '#8fd3f5', '#d1a8ff', '#ffffff'];
+  BG.macaron = sweetBg({ stops: ['#fff6f9', '#ffe4ed', '#fbd0dd'], glow: [0.5, 0.1, 0.6, 'rgba(255,255,255,0.75)', WHITE0], dots: { n: 14, r: [0.03, 0.07], colors: ['#ffffff', '#ffd9e6', '#e6f2ff'], alpha: 0.45 } });
+  BG.eiscreme = sweetBg({ stops: ['#fff9f0', '#fbead8', '#f2d8bf'], glow: [0.3, 0.12, 0.55, 'rgba(255,255,255,0.7)', WHITE0], dots: { n: 70, r: [0.004, 0.008], colors: SPRINKLES, alpha: 0.75 } });
+  BG.zuckerwatte = sweetBg({ stops: ['#ffd9ec', '#f3dbff', '#d9ecff'], glow: [0.5, 0.2, 0.6, 'rgba(255,255,255,0.6)', WHITE0], clouds: 6 });
+  BG.honig = sweetBg({ stops: ['#fff6dc', '#ffe6ad', '#f7cd78'], glow: [0.7, 0.15, 0.5, 'rgba(255,255,240,0.8)', WHITE0], hills: [['rgba(230,170,70,0.3)', 0.86, 0.03, 3], ['rgba(210,145,50,0.35)', 0.92, 0.025, 4]] });
+  BG.seifenblasen = sweetBg({ stops: ['#eaf7ff', '#d4ecfb', '#c0e0f7'], glow: [0.4, 0.1, 0.6, 'rgba(255,255,255,0.7)', WHITE0], dots: { n: 18, r: [0.02, 0.06], colors: ['#ffffff'], alpha: 0.3 } });
+  BG.pfirsich = sweetBg({ stops: ['#fff3ea', '#ffdcc6', '#ffc5a6'], glow: [0.5, 0.12, 0.55, 'rgba(255,255,255,0.7)', WHITE0], hills: [['rgba(240,150,110,0.3)', 0.86, 0.03, 3], ['rgba(225,125,90,0.35)', 0.92, 0.025, 4]] });
+  BG.gummibaer = sweetBg({ stops: ['#fffbea', '#fff2cc', '#ffe8b3'], glow: [0.5, 0.1, 0.6, 'rgba(255,255,255,0.7)', WHITE0], dots: { n: 22, r: [0.012, 0.03], colors: SPRINKLES, alpha: 0.35 } });
+  BG.regenbogen = sweetBg({ stops: ['#f4f9ff', '#e6f2ff', '#d7eaff'], rainbow: true, clouds: 4 });
+  BG.marshmallow = sweetBg({ stops: ['#f6ebe3', '#ecd9cc', '#dcc2b0'], glow: [0.5, 0.1, 0.6, 'rgba(255,255,255,0.7)', WHITE0], dots: { n: 12, r: [0.03, 0.07], colors: ['#ffffff', '#ffe4ea'], alpha: 0.4 } });
+  BG.wiese = sweetBg({ stops: ['#eefbf3', '#d9f3e4', '#c3ead2'], glow: [0.5, 0.08, 0.6, 'rgba(255,255,255,0.7)', WHITE0], hills: [['rgba(120,200,140,0.35)', 0.8, 0.035, 3], ['rgba(90,175,115,0.45)', 0.88, 0.03, 4]], flowers: 26 });
+
+  P.THEMES.push(
+    T('macaron', 'Macarons', 'macaron', 'macaron', PASTEL, LIGHT('#7a3b55', '#ff7fa3', '#ffe4ed'),
+      lightBoard('#ffffff', '#fff1f5', 'rgba(255,127,163,0.09)', '#ffffff', 'rgba(200,90,130,0.28)', 0.3), drift(['#ffffff', '#ffd9e6']), CALM_FX),
+    T('eiscreme', 'Eisdiele', 'pearl', 'eiscreme', ['#ff8fa3', '#ffb47a', '#fff0a0', '#a8e6a3', '#9cdcf5', '#b0b6ff', '#dcb0ff'], LIGHT('#6b4a33', '#ff8fa3', '#fbead8'),
+      lightBoard('#fffdf9', '#fbf0e3', 'rgba(130,90,50,0.08)', '#ffffff', 'rgba(130,90,50,0.28)', 0.5), drift(['#ffffff', '#ffd9b3']), CALM_FX),
+    T('zuckerwatte', 'Zuckerwatte', 'soft', 'zuckerwatte', PASTEL, LIGHT('#6a3e78', '#e58ad6', '#f3dbff'),
+      lightBoard('#ffffff', '#fbf1ff', 'rgba(170,100,200,0.08)', '#ffffff', 'rgba(170,100,200,0.3)', 0.3), drift(['#ffffff', '#ffd1f0', '#d1ecff']), CALM_FX),
+    T('honig', 'Honigwabe', 'candy', 'honig', ['#f07a7a', '#f7a24a', '#f8cf4d', '#9ccc6a', '#7cc6d8', '#8c9ee0', '#c08fd8'], LIGHT('#6b4410', '#f0a52a', '#ffe6ad'),
+      lightBoard('#fffaf0', '#fdefd0', 'rgba(170,110,20,0.09)', '#ffffff', 'rgba(170,110,20,0.3)', 0.2), drift(['#fff4c2', '#ffffff']), CALM_FX),
+    T('seifenblasen', 'Seifenblasen', 'bubble', 'seifenblasen', ['#ff8fa8', '#ffbd8a', '#ffe68f', '#a6e3b5', '#8fd3ff', '#a6b4ff', '#d6aaff'], LIGHT('#2f5a7a', '#5aaee0', '#d4ecfb'),
+      lightBoard('#ffffff', '#eef7fe', 'rgba(70,150,210,0.08)', '#ffffff', 'rgba(70,150,210,0.28)', 0.5), drift(['#ffffff'], true), CALM_FX),
+    T('pfirsich', 'Pfirsichgarten', 'clay', 'pfirsich', ['#ff8a80', '#ffae70', '#ffe08a', '#a8d98a', '#86cfe0', '#9ba6e8', '#d19be0'], LIGHT('#7a3d2a', '#ff9a6b', '#ffdcc6'),
+      lightBoard('#fffaf7', '#fff0e8', 'rgba(200,110,70,0.08)', '#ffffff', 'rgba(200,110,70,0.3)', 0.26), drift(['#ffffff', '#ffd9c2']), CALM_FX),
+    T('gummibaer', 'Gummibärchen', 'gummi', 'gummibaer', ['#ff6f80', '#ffa040', '#ffe14d', '#7ad66b', '#58c8f0', '#7a8cff', '#c77dff'], LIGHT('#5a4420', '#ff9a3c', '#fff2cc'),
+      lightBoard('#fffdf5', '#fff5dd', 'rgba(160,110,20,0.08)', '#ffffff', 'rgba(160,110,20,0.28)', 0.3), drift(['#ffffff', '#ffe9a8']), CALM_FX),
+    T('regenbogen', 'Pastell-Regenbogen', 'soft', 'regenbogen', PASTEL, LIGHT('#3d4f78', '#7fa6ff', '#e6f2ff'),
+      lightBoard('#ffffff', '#f0f6ff', 'rgba(80,120,220,0.08)', '#ffffff', 'rgba(80,120,220,0.28)', 0.26), drift(['#ffffff']), CALM_FX),
+    T('marshmallow', 'Marshmallow', 'soft', 'marshmallow', ['#ffb0bd', '#ffcba4', '#fff0b3', '#c4ecc4', '#bfe3f7', '#c7ccff', '#e6c6ff'], LIGHT('#5c3a2e', '#e38f9f', '#ecd9cc'),
+      lightBoard('#fffaf7', '#f8ece5', 'rgba(120,70,50,0.08)', '#ffffff', 'rgba(120,70,50,0.28)', 0.34), drift(['#ffffff', '#ffe4ea']), CALM_FX),
+    T('wiese', 'Frühlingswiese', 'clay', 'wiese', ['#ff8c9e', '#ffb070', '#ffe27a', '#8fd68a', '#7fcfe8', '#90a0f0', '#c99af0'], LIGHT('#2f5a3a', '#5fbf7a', '#d9f3e4'),
+      lightBoard('#ffffff', '#eefbf2', 'rgba(60,150,90,0.08)', '#ffffff', 'rgba(60,150,90,0.28)', 0.3), drift(['#ffffff', '#ffd1e0']), CALM_FX)
+  );
+
+  // Unruhige, düstere oder technische Designs sind abgeschaltet. Zum Wiedereinschalten die Kennung hier entfernen.
+  const OFF = ['neon', 'lava', 'pixel', 'bricks', 'knit', 'popart', 'obst', 'monster', 'platine', 'kathedrale', 'marrakesch', 'hologramm', 'disco', 'tusche',
+    'lcd', 'casino', 'station', 'geister', 'blaupause', 'kreide', 'pharao', 'olymp', 'schiefer'];
   for (let i = P.THEMES.length - 1; i >= 0; i--) if (OFF.includes(P.THEMES[i].id)) P.THEMES.splice(i, 1);
 })();

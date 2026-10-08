@@ -60,7 +60,7 @@
   function musicBus() {
     if (mBus || !ac) return;
     mOut = ac.createGain(); mOut.gain.value = 0.0001;
-    const soft = ac.createBiquadFilter(); soft.type = 'lowpass'; soft.frequency.value = 7000;
+    const soft = ac.createBiquadFilter(); soft.type = 'lowpass'; soft.frequency.value = 5200;
     mBus = ac.createGain();
     mBus.connect(soft); soft.connect(mOut); mOut.connect(master);
     // weiches Echo für Glocken und Arpeggios
@@ -92,68 +92,67 @@
     src.connect(fl); fl.connect(g); g.connect(mBus);
     src.start(t, Math.random() * 0.3); src.stop(t + d + 0.03);
   }
-  const V = { // Instrumente
-    ep(m, t, d, v) { mNote(m, t, d, v, 'triangle', { lp: 1800, send: 0.15 }); mNote(m, t, d * 0.6, v * 0.4, 'sine', { det: 6 }); },
-    bass(m, t, d, v) { mNote(m, t, d, v, 'sine', { a: 0.02 }); mNote(m, t, d, v * 0.35, 'triangle', { a: 0.02, lp: 320 }); },
-    bell(m, t, d, v) { mNote(m, t, d, v, 'sine', { send: 0.5 }); mNote(m + 12, t, d * 0.5, v * 0.25, 'sine', { send: 0.4 }); },
-    pad(m, t, d, v) { mNote(m, t, d, v, 'sawtooth', { a: d * 0.3, lp: 760, hold: true, send: 0.2 }); mNote(m, t, d, v, 'sawtooth', { a: d * 0.3, lp: 760, hold: true, det: 9 }); },
-    pluck(m, t, d, v) { mNote(m, t, d, v, 'triangle', { lp: 2600, send: 0.35 }); },
-    arp(m, t, d, v) { mNote(m, t, d, v, 'sawtooth', { lp: 1500, send: 0.3 }); },
-    kick(t, v) {
-      const osc = ac.createOscillator(), g = ac.createGain();
-      osc.frequency.setValueAtTime(110, t); osc.frequency.exponentialRampToValueAtTime(45, t + 0.18);
-      g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
-      osc.connect(g); g.connect(mBus); osc.start(t); osc.stop(t + 0.28);
+  // Instrumente – bewusst weich: keine Sägezahn-Flächen, kein Schlagzeug, viel Hall
+  const V = {
+    ep(m, t, d, v) { mNote(m, t, d, v, 'triangle', { lp: 1300, send: 0.22 }); mNote(m, t, d * 0.7, v * 0.35, 'sine', { det: 5 }); },
+    bass(m, t, d, v) { mNote(m, t, d, v, 'sine', { a: 0.04 }); mNote(m, t, d, v * 0.25, 'triangle', { a: 0.04, lp: 260 }); },
+    bell(m, t, d, v) { mNote(m, t, d, v, 'sine', { send: 0.55 }); mNote(m + 12, t, d * 0.4, v * 0.18, 'sine', { send: 0.4 }); },
+    pad(m, t, d, v) { mNote(m, t, d, v, 'triangle', { a: d * 0.35, lp: 900, hold: true, send: 0.25 }); mNote(m, t, d, v * 0.8, 'triangle', { a: d * 0.35, lp: 900, hold: true, det: 7 }); },
+    pluck(m, t, d, v) { mNote(m, t, d, v, 'triangle', { lp: 1900, send: 0.4 }); },
+    // leises Rauschen wie ferner Wind/Regen, lang ausklingend
+    breath(t, d, v) {
+      const src = ac.createBufferSource(), fl = ac.createBiquadFilter(), g = ac.createGain();
+      src.buffer = noiseBuf; src.loop = true; fl.type = 'lowpass'; fl.frequency.value = 900;
+      g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(v, t + d * 0.4); g.gain.linearRampToValueAtTime(0.0001, t + d);
+      src.connect(fl); fl.connect(g); g.connect(mBus);
+      src.start(t); src.stop(t + d + 0.05);
     },
-    hat(t, v) { mNoise(t, 0.04, v, 'highpass', 7000); },
-    snare(t, v) { mNoise(t, 0.13, v, 'bandpass', 1800); },
   };
-  // b = Bassnote, n = Akkordtöne (MIDI)
+  // Zufälliger Melodieschritt: vom letzten Ton aus höchstens zwei Stufen in der Tonleiter weiter
+  function walk(trk, scale) {
+    const i = trk.mi == null ? 2 : trk.mi, j = Math.max(0, Math.min(scale.length - 1, i + ((Math.random() * 5) | 0) - 2));
+    trk.mi = j;
+    return scale[j];
+  }
+  // b = Bassnote, n = Akkordtöne (MIDI), mel = Tonvorrat der Melodie
   const TRACKS = [
     {
-      name: 'Lo-Fi Lounge', bpm: 72, swing: 0.28, bars: 1,
-      chords: [{ b: 38, n: [53, 57, 60, 64] }, { b: 43, n: [53, 57, 59, 64] }, { b: 36, n: [52, 55, 59, 62] }, { b: 33, n: [52, 55, 59, 60] }],
-      step(s, c, t) {
-        if (s === 0) { c.n.forEach((m, i) => V.ep(m, t + i * 0.012, 2.6, 0.075)); V.bass(c.b, t, 0.9, 0.2); }
-        if (s === 10) c.n.forEach((m, i) => V.ep(m, t + i * 0.01, 1.2, 0.04));
-        if (s === 7) V.bass(c.b, t, 0.4, 0.13);
-        if (s === 14) V.bass(c.b + 7, t, 0.4, 0.12);
-        if (s === 0 || s === 10) V.kick(t, 0.4);
-        if (s === 4 || s === 12) V.snare(t, 0.07);
-        if (s % 2 === 0) V.hat(t, s % 4 === 2 ? 0.045 : 0.025);
-        if ((s === 3 || s === 6 || s === 8 || s === 11 || s === 13) && Math.random() < 0.32) V.bell(pick(c.n) + (Math.random() < 0.3 ? 24 : 12), t, 1.4, 0.06);
+      name: 'Morgentau', bpm: 62, bars: 2,
+      chords: [{ b: 48, n: [60, 64, 67, 71] }, { b: 45, n: [60, 64, 67, 69] }, { b: 41, n: [60, 64, 65, 69] }, { b: 43, n: [59, 62, 64, 67] }],
+      mel: [72, 74, 76, 79, 81, 84, 86],
+      step(s, c, t, sd) {
+        if (s === 0) { c.n.forEach((m, i) => V.ep(m, t + i * 0.03, sd * 20, 0.06)); V.bass(c.b, t, sd * 18, 0.14); }
+        if (s === 8) c.n.slice(1).forEach((m, i) => V.ep(m, t + i * 0.03, sd * 8, 0.035));
+        if (s % 4 === 2 && Math.random() < 0.5) V.bell(walk(this, this.mel), t, 2.2, 0.05);
       },
     },
     {
-      name: 'Traumwolken', bpm: 60, bars: 2,
+      name: 'Traumwolken', bpm: 58, bars: 2,
       chords: [{ b: 41, n: [57, 60, 64, 69] }, { b: 45, n: [55, 60, 64, 67] }, { b: 38, n: [53, 57, 60, 64] }, { b: 43, n: [55, 59, 62, 66] }],
+      mel: [69, 71, 72, 76, 79, 81, 84],
       step(s, c, t, sd) {
-        if (s === 0) { c.n.forEach(m => V.pad(m, t, sd * 18, 0.034)); V.bass(c.b, t, sd * 14, 0.16); }
-        if (s % 2 === 0 && Math.random() < 0.42) V.bell(pick(c.n) + (Math.random() < 0.4 ? 24 : 12), t, 2.6, 0.055);
+        if (s === 0) { c.n.forEach(m => V.pad(m, t, sd * 20, 0.03)); V.bass(c.b, t, sd * 16, 0.13); V.breath(t, sd * 16, 0.012); }
+        if (s % 4 === 0 && Math.random() < 0.4) V.bell(walk(this, this.mel), t, 3, 0.045);
       },
     },
     {
-      name: 'Sonnendeck', bpm: 104, bars: 1,
-      chords: [{ b: 45, n: [57, 60, 64, 67] }, { b: 41, n: [53, 57, 60, 64] }, { b: 36, n: [55, 60, 64, 67] }, { b: 43, n: [55, 59, 62, 64] }],
-      pat: [0, -1, -1, 1, -1, -1, 2, -1, 3, -1, -1, 2, -1, -1, 1, -1],
+      name: 'Sanfter Regen', bpm: 68, bars: 1,
+      chords: [{ b: 50, n: [62, 65, 69, 72] }, { b: 46, n: [58, 62, 65, 69] }, { b: 41, n: [57, 60, 65, 69] }, { b: 43, n: [59, 62, 65, 67] }],
+      pat: [0, -1, 1, -1, 2, -1, 3, -1, 2, -1, 1, -1, 3, -1, 2, -1],
       step(s, c, t, sd) {
-        if (s === 0) c.n.forEach(m => V.pad(m, t, sd * 15, 0.022));
-        if (s % 4 === 0) V.kick(t, 0.38);
-        if (s % 4 === 2) { V.hat(t, 0.04); V.bass(c.b, t, sd * 1.6, 0.17); }
-        if (s === 4 || s === 12) V.snare(t, 0.05);
-        if (this.pat[s] >= 0) V.pluck(c.n[this.pat[s]] + 12, t, 0.32, 0.085);
+        if (s === 0) { c.n.forEach(m => V.pad(m, t, sd * 17, 0.02)); V.bass(c.b, t, sd * 14, 0.12); }
+        if (this.pat[s] >= 0) V.pluck(c.n[this.pat[s]] + 12, t, sd * 3, 0.04 + (s === 0 ? 0.015 : 0));
+        if (s === 8) V.breath(t, sd * 8, 0.01);
       },
     },
     {
-      name: 'Sternenstaub', bpm: 88, bars: 1,
-      chords: [{ b: 40, n: [52, 55, 59, 64] }, { b: 36, n: [52, 55, 60, 64] }, { b: 43, n: [50, 55, 59, 62] }, { b: 38, n: [50, 54, 57, 62] }],
-      pat: [0, 1, 2, 3, 2, 1, 0, 1, 2, 3, 2, 1, 0, 2, 1, 3],
+      name: 'Nachtlicht', bpm: 54, bars: 2,
+      chords: [{ b: 45, n: [57, 60, 64, 67] }, { b: 41, n: [57, 60, 64, 65] }, { b: 48, n: [55, 60, 64, 67] }, { b: 43, n: [55, 59, 62, 67] }],
+      mel: [67, 69, 72, 74, 76, 79, 81],
       step(s, c, t, sd) {
-        if (s === 0) c.n.forEach(m => V.pad(m, t, sd * 16, 0.028));
-        if (s % 2 === 0) mNote(c.b, t, sd * 1.7, 0.11, 'sawtooth', { lp: 420 });
-        V.arp(c.n[this.pat[s]] + 12, t, sd * 1.5, 0.04);
-        if (s === 0 || s === 8) V.kick(t, 0.36);
-        if (s === 4 || s === 12) V.snare(t, 0.06);
+        if (s === 0) { c.n.forEach((m, i) => V.ep(m, t + i * 0.04, sd * 22, 0.05)); V.bass(c.b, t, sd * 20, 0.12); }
+        if ((s === 6 || s === 12) && Math.random() < 0.6) V.bell(walk(this, this.mel), t, 2.6, 0.04);
+        if (s === 14 && Math.random() < 0.3) V.bell(walk(this, this.mel) + 12, t, 2.6, 0.02);
       },
     },
   ];

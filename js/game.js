@@ -11,8 +11,7 @@
   /* ---------- Speicher ---------- */
   const LS = 'prisma.v1';
   // sfx/mus: Lautstärken 0–1 (sound/music bleiben als Ja/Nein-Spiegel für ältere Spielstände erhalten)
-  // unlocked: freigeschaltete Designs, total: Punkte aller Partien, ms: eingelöste Punkte-Meilensteine
-  const store = { best: {}, theme: 'jewel', sound: true, haptic: true, auto: true, music: true, track: 0, saves: {}, sfx: 0.8, mus: 0.7, unlocked: null, total: 0, ms: 0 };
+  const store = { best: {}, theme: 'jewel', sound: true, haptic: true, auto: true, music: true, track: 0, saves: {}, sfx: 0.8, mus: 0.7 };
   try {
     const raw = JSON.parse(localStorage.getItem(LS) || 'null');
     if (raw && typeof raw === 'object') {
@@ -25,7 +24,6 @@
   if (!store.saves || typeof store.saves !== 'object') store.saves = {};
   store.sfx = Math.min(1, Math.max(0, +store.sfx || 0)); store.mus = Math.min(1, Math.max(0, +store.mus || 0));
   store.sound = store.sfx > 0; store.music = store.mus > 0;
-  store.total = Math.max(0, store.total | 0); store.ms = Math.max(0, store.ms | 0);
   function persist() { try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) { /* ignorieren */ } }
 
   /* ---------- Helfer ---------- */
@@ -48,16 +46,14 @@
 
   /* ---------- Formen ---------- */
   // Die Gewichte (w) sind auf das 8×8-Feld abgestimmt: kleine und mittlere Teile kommen oft, sperrige selten.
-  // Gewicht 0 = das Teil kommt nicht mehr vor (Fünfer-Linien und der 3×3-Block sind auf 8×8 unfair).
-  // Die Reihenfolge nicht ändern – gespeicherte Spielstände merken sich die Teile über ihren Index.
+  // Fünfer-Linien und der 3×3-Block gibt es nicht mehr (auf 8×8 unfair).
+  // Die Reihenfolge nicht ändern – gespeicherte Spielstände merken sich die Teile über ihren Index (SAVE_V 2).
   const DEFS = [
     { m: ['#'], w: 1.6 },
     { m: ['##'], w: 2.6 }, { m: ['#', '#'], w: 2.6 },
     { m: ['###'], w: 2.6 }, { m: ['#', '#', '#'], w: 2.6 },
     { m: ['####'], w: 1.4 }, { m: ['#', '#', '#', '#'], w: 1.4 },
-    { m: ['#####'], w: 0 }, { m: ['#', '#', '#', '#', '#'], w: 0 },
     { m: ['##', '##'], w: 3.6 },
-    { m: ['###', '###', '###'], w: 0 },
     { m: ['###', '###'], w: 0.8 }, { m: ['##', '##', '##'], w: 0.8 },
     // kleines L
     { m: ['#.', '##'], w: 1.6 }, { m: ['.#', '##'], w: 1.6 }, { m: ['##', '#.'], w: 1.6 }, { m: ['##', '.#'], w: 1.6 },
@@ -77,6 +73,9 @@
     return { id, cells, h: d.m.length, w: d.m[0].length, wt: d.w };
   });
   const POOL = PIECES.filter(p => p.wt > 0); // Teile, die tatsächlich gezogen werden
+  // Spielstände vor SAVE_V 2 nutzten eine Liste mit Fünfer-Linien (7, 8) und 3×3-Block (10) – Index umrechnen
+  const SAVE_V = 2;
+  const oldId = id => (id < 7 ? id : id === 7 || id === 8 || id === 10 ? -1 : id < 10 ? id - 2 : id - 3);
 
   /* ---------- Zustand ---------- */
   const cv = $('game'), ctx = cv.getContext('2d', { alpha: false });
@@ -211,10 +210,13 @@
   // Spielstand als einfaches Objekt (für Speichern und für "Zug zurück")
   const trayIds = tr => tr.map(t => (t ? { p: t.piece.id, c: t.color } : null));
   function snapState() {
-    return { g: Array.from(grid), s: score, k: streak, m: sinceClear, w: seriesSwitched ? 1 : 0, st: Object.assign({}, stats), t: trayIds(tray) };
+    return { v: SAVE_V, g: Array.from(grid), s: score, k: streak, m: sinceClear, w: seriesSwitched ? 1 : 0, st: Object.assign({}, stats), t: trayIds(tray) };
   }
-  function traySlot(x, i, born) {
-    return x && PIECES[x.p] ? { piece: PIECES[x.p], color: clamp(x.c | 0, 1, 7), born, ret: null, fits: true } : null;
+  // old: Eintrag stammt aus einem Spielstand mit alter Teile-Liste
+  function traySlot(x, i, born, old) {
+    if (!x) return null;
+    const id = old ? oldId(x.p | 0) : x.p | 0;
+    return PIECES[id] ? { piece: PIECES[id], color: clamp(x.c | 0, 1, 7), born, ret: null, fits: true } : null;
   }
   function saveGame() {
     const s = snapState();
@@ -233,12 +235,15 @@
     const st = s.st || {};
     stats = { lines: st.lines | 0, combo: st.combo | 0, designs: st.designs | 0 };
     recordHit = recordRun = score > 0 && score >= startBest;
-    tray = [0, 1, 2].map(i => traySlot(s.t[i], i, T + 0.1 + i * 0.09));
+    const old = s.v !== SAVE_V;
+    tray = [0, 1, 2].map(i => traySlot(s.t[i], i, T + 0.1 + i * 0.09, old));
     if (!tray.some(Boolean)) refill();
     updFits();
     if (!tray.some(t => t && t.fits)) return false;
-    if (s.u && Array.isArray(s.u.g) && s.u.g.length === N * N && Array.isArray(s.u.t)) undo = s.u;
-    if (Array.isArray(s.pt) && s.pt.length === 3) pendingTray = s.pt;
+    if (!old) {
+      if (s.u && Array.isArray(s.u.g) && s.u.g.length === N * N && Array.isArray(s.u.t)) undo = s.u;
+      if (Array.isArray(s.pt) && s.pt.length === 3) pendingTray = s.pt;
+    }
     refreshHud(); updUndoBtn();
     return true;
   }
@@ -273,7 +278,6 @@
   function place(i, r0, c0) {
     const t = tray[i], pc = t.piece, c = L.cell, col = theme.colors[t.color - 1];
     undo = snapState();
-    const before = score;
     tray[i] = null;
     pc.cells.forEach(([r, q], k) => {
       const idx = (r0 + r) * N + c0 + q;
@@ -309,9 +313,6 @@
     }
     updFits();
     elScore.classList.remove('bump'); void elScore.offsetWidth; elScore.classList.add('bump');
-    // Punkte aller Partien zählen – alle MS_STEP Punkte wird ein neues Design frei
-    store.total += score - before;
-    while (store.total >= MS_STEP * (store.ms + 1)) { store.ms++; unlockRandom(nextL && nextL.theme); }
     updUndoBtn();
     if (!tray.some(x => x && x.fits)) endGame(); else saveGame();
   }
@@ -364,7 +365,6 @@
       pushBanner('Neuer Rekord!', '', '#ffc93c');
       sfx.record(); confetti(80);
       elBestPill.classList.remove('glow'); void elBestPill.offsetWidth; elBestPill.classList.add('glow');
-      unlockRandom(nextL && nextL.theme); // ein Rekord schaltet ein Design frei
     }
   }
 
@@ -454,34 +454,10 @@
     prepNext();
   }
 
-  /* ---------- Freischalten der Designs ---------- */
-  // Die ersten FREE Designs sind offen. Neue gibt es für ein leer geräumtes Feld (das Design, zu dem
-  // gewechselt wird), für einen neuen Rekord und für je MS_STEP Punkte über alle Partien hinweg.
-  const FREE = 8, MS_STEP = 2000;
-  if (!Array.isArray(store.unlocked)) store.unlocked = THEMES.slice(0, FREE).map(t => t.id);
-  if (!store.unlocked.includes(theme.id)) store.unlocked.push(theme.id);
-  const isUnlocked = th => store.unlocked.includes(th.id);
-  const lockedThemes = () => THEMES.filter(t => !isUnlocked(t));
-  function unlockTheme(th, quiet) {
-    if (!th || isUnlocked(th)) return;
-    store.unlocked.push(th.id); persist();
-    refreshLocks();
-    if (!quiet) { pushBanner('Neues Design!', th.name, theme.ui.accent); sfx.theme(); }
-  }
-  // Schaltet ein zufälliges gesperrtes Design frei (nicht das, das als nächstes ohnehin kommt)
-  function unlockRandom(except) {
-    let pool = lockedThemes().filter(t => t !== except);
-    if (!pool.length) pool = lockedThemes();
-    if (pool.length) unlockTheme(pool[(Math.random() * pool.length) | 0], false);
-  }
-
   /* ---------- Design-Wechsel ---------- */
-  // Solange es gesperrte Designs gibt, zeigt der Wechsel bei leerem Feld ein neues; danach alle im Wechsel
   function nextTheme() {
-    const locked = lockedThemes().filter(t => t !== theme);
-    if (locked.length) return locked[(Math.random() * locked.length) | 0];
     if (!bag.length) {
-      bag = THEMES.filter(t => t !== theme && isUnlocked(t));
+      bag = THEMES.filter(t => t !== theme);
       for (let i = bag.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0, t = bag[i]; bag[i] = bag[j]; bag[j] = t; }
     }
     const th = bag.pop();
@@ -545,9 +521,7 @@
     let o = nextL;
     nextL = null;
     if (!o || o.theme === theme) { freeLayers(o); o = buildLayers(nextTheme()); }
-    const fresh = !isUnlocked(o.theme);
     switchTheme(o, x, y);
-    if (fresh) { unlockTheme(o.theme, true); showToast('Neues Design: ' + o.theme.name); }
     stats.designs++;
     sfx.whoosh();
     prepNext();
@@ -1225,7 +1199,6 @@
   function setTheme(id) {
     const th = THEMES.find(t => t.id === id);
     if (!th || th === theme) return;
-    if (!isUnlocked(th)) { showToast('Noch gesperrt – spiel weiter!'); sfx.back(); return; }
     let o = null;
     if (nextL && nextL.theme === th) { o = nextL; nextL = null; }
     switchTheme(o || buildLayers(th), W / 2, L.by + L.bs / 2);
@@ -1240,7 +1213,7 @@
     const pattern = [[0, 0, 1], [1, 0, 1], [3, 0, 3], [0, 1, 4], [1, 1, 2], [2, 1, 2], [3, 1, 3], [0, 2, 4], [1, 2, 5], [2, 2, 6], [3, 2, 7]];
     const addCard = th => {
       const btn = document.createElement('button');
-      btn.className = 'theme-card' + (th.id === theme.id ? ' active' : '') + (isUnlocked(th) ? '' : ' locked');
+      btn.className = 'theme-card' + (th.id === theme.id ? ' active' : '');
       btn.dataset.id = th.id;
       const c = makeCanvas(pw * dpr, ph * dpr), g = c.getContext('2d');
       g.scale(dpr, dpr);
@@ -1268,13 +1241,6 @@
       if (idx < THEMES.length) setTimeout(step, 16);
     };
     step();
-    refreshLocks();
-  }
-  // Schloss-Symbole und Zähler in der Design-Auswahl auffrischen
-  function refreshLocks() {
-    document.querySelectorAll('.theme-card').forEach(el => el.classList.toggle('locked', !store.unlocked.includes(el.dataset.id)));
-    const n = THEMES.filter(isUnlocked).length;
-    $('themeCount').textContent = n + ' von ' + THEMES.length + ' Designs frei';
   }
   function openThemes() { syncSettings(); buildThemeGrid(); openOv('ovThemes'); }
 
