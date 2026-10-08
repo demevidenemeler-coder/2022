@@ -410,7 +410,7 @@
     const cs = getComputedStyle($('safe'));
     const st = parseFloat(cs.paddingTop) || 0, avail = H - (parseFloat(cs.paddingBottom) || 0);
     const colW = Math.min(W, 560);
-    const hudH = st + clamp((H - st) * 0.17, 104, 150);
+    const hudH = st + clamp((H - st) * 0.19, 124, 176);
     const gap = 14;
     const bs = Math.max(180, Math.floor(Math.min(colW - 24, (avail - hudH - gap - 22) / 1.34)));
     const trayH = bs * 0.34;
