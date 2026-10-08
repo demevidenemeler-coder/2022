@@ -1,6 +1,6 @@
 /* Prisma – Service Worker: macht das Spiel nach dem ersten Laden offline spielbar.
    Bei jeder Änderung an den Spieldateien VERSION erhöhen, damit Geräte die neue Fassung holen. */
-const VERSION = 'prisma-v3';
+const VERSION = 'prisma-v4';
 const ASSETS = [
   './', 'index.html', 'css/style.css',
   'js/themes.js', 'js/themes2.js', 'js/audio.js', 'js/game.js',

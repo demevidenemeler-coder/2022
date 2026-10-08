@@ -66,12 +66,6 @@
     d.m.forEach((row, r) => { for (let c = 0; c < row.length; c++) if (row[c] === '#') cells.push([r, c]); });
     return { id, cells, h: d.m.length, w: d.m[0].length, wt: d.w };
   });
-  const WSUM = PIECES.reduce((a, p) => a + p.wt, 0);
-  function randomPiece() {
-    let x = Math.random() * WSUM;
-    for (const p of PIECES) { x -= p.wt; if (x <= 0) return p; }
-    return PIECES[0];
-  }
 
   /* ---------- Zustand ---------- */
   const cv = $('game'), ctx = cv.getContext('2d', { alpha: false });
@@ -111,23 +105,55 @@
   /* =====================================================================
      Spiellogik
      ===================================================================== */
-  function canPlace(pc, r0, c0) {
+  // g = beliebiges Feld (das echte oder eine Probe-Kopie)
+  function canPlaceOn(g, pc, r0, c0) {
     if (r0 < 0 || c0 < 0 || r0 + pc.h > N || c0 + pc.w > N) return false;
-    for (const [r, c] of pc.cells) if (grid[(r0 + r) * N + c0 + c]) return false;
+    for (const [r, c] of pc.cells) if (g[(r0 + r) * N + c0 + c]) return false;
     return true;
   }
+  function spotsOn(g, pc) {
+    const out = [];
+    for (let r = 0; r <= N - pc.h; r++) for (let c = 0; c <= N - pc.w; c++) if (canPlaceOn(g, pc, r, c)) out.push([r, c]);
+    return out;
+  }
+  function canPlace(pc, r0, c0) { return canPlaceOn(grid, pc, r0, c0); }
   function fitsAnywhere(pc) {
     for (let r = 0; r <= N - pc.h; r++) for (let c = 0; c <= N - pc.w; c++) if (canPlace(pc, r, c)) return true;
     return false;
   }
+  // Legt pc probeweise auf g und räumt volle Reihen/Spalten ab
+  function simPlace(g, pc, r0, c0) {
+    for (const [r, c] of pc.cells) g[(r0 + r) * N + c0 + c] = 1;
+    const rows = [], cols = [];
+    for (let r = 0; r < N; r++) { let f = true; for (let c = 0; c < N; c++) if (!g[r * N + c]) { f = false; break; } if (f) rows.push(r); }
+    for (let c = 0; c < N; c++) { let f = true; for (let r = 0; r < N; r++) if (!g[r * N + c]) { f = false; break; } if (f) cols.push(c); }
+    rows.forEach(r => { for (let c = 0; c < N; c++) g[r * N + c] = 0; });
+    cols.forEach(c => { for (let r = 0; r < N; r++) g[r * N + c] = 0; });
+  }
+  // Drei neue Teile, die garantiert alle nacheinander aufs Feld passen: Auf einer Probe-Kopie wird
+  // jeweils ein passendes Teil gezogen, abgelegt und volle Reihen werden abgeräumt, bevor das nächste gewählt wird.
+  function drawSet() {
+    const sim = Uint8Array.from(grid), set = [];
+    for (let i = 0; i < 3; i++) {
+      const fit = PIECES.map(p => ({ p, spots: spotsOn(sim, p) })).filter(x => x.spots.length);
+      if (!fit.length) { set.push(PIECES[0]); continue; }
+      let x = Math.random() * fit.reduce((t, f) => t + f.p.wt, 0), pick = fit[0];
+      for (const f of fit) { x -= f.p.wt; if (x <= 0) { pick = f; break; } }
+      const spot = pick.spots[(Math.random() * pick.spots.length) | 0];
+      simPlace(sim, pick.p, spot[0], spot[1]);
+      set.push(pick.p);
+    }
+    // Reihenfolge mischen, damit die Lösung nicht immer von links nach rechts liegt
+    for (let i = 2; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0, t = set[i]; set[i] = set[j]; set[j] = t; }
+    return set;
+  }
   function refill() {
-    // Auf dem engen 8×8-Feld möglichst drei Teile wählen, von denen jedes für sich noch Platz findet
+    // Mehrere Versuche: am liebsten ein Dreier, bei dem jedes Teil schon jetzt irgendwo passt
     let set = null, most = -1;
-    for (let i = 0; i < 40 && most < 3; i++) {
-      const cand = [randomPiece(), randomPiece(), randomPiece()], n = cand.filter(fitsAnywhere).length;
+    for (let i = 0; i < 12 && most < 3; i++) {
+      const cand = drawSet(), n = cand.filter(fitsAnywhere).length;
       if (n > most) { most = n; set = cand; }
     }
-    if (!most) set[0] = PIECES[0];
     for (let i = 0; i < 3; i++)
       tray[i] = { piece: set[i], color: 1 + ((Math.random() * 7) | 0), born: T + 0.1 + i * 0.09, ret: null, fits: true };
   }
