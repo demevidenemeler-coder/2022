@@ -215,12 +215,14 @@
     const lines = rows.length + cols.length;
     streak++; sinceClear = 0;
     stats.lines += lines; stats.combo = Math.max(stats.combo, streak);
-    // Bei einer Combo (Reihe in Folge oder mehrere Reihen auf einmal) wechselt zusätzlich das ganze Design,
-    // aber nur einmal pro Serie: erst wenn die Serie abreißt, kann die nächste Combo wieder wechseln
-    if ((streak >= 2 || lines >= 2) && !seriesSwitched) { seriesSwitched = true; autoSwitch(cx, cy); }
-    const c = L.cell, set = new Set(), col = theme.colors[to - 1];
+    const c = L.cell, set = new Set();
     rows.forEach(r => { for (let q = 0; q < N; q++) set.add(r * N + q); });
     cols.forEach(q => { for (let r = 0; r < N; r++) set.add(r * N + q); });
+    // Das ganze Design wechselt nur, wenn dieser Zug das Feld komplett leer räumt
+    let clean = true;
+    for (let i = 0; i < grid.length; i++) if (grid[i] && !set.has(i)) { clean = false; break; }
+    if (clean) autoSwitch(cx, cy);
+    const col = theme.colors[to - 1];
     let gain = Math.round(N * 10 * lines * (1 + (lines - 1) * 0.5) * (1 + (streak - 1) * 0.5));
 
     const pr = (cy - L.gy) / c - 0.5, pq = (cx - L.gx) / c - 0.5;
