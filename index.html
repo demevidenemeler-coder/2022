@@ -30,6 +30,9 @@
       <span id="best">0</span>
     </div>
     <div class="hud-btns">
+      <button class="icon-btn" id="btnUndo" aria-label="Zug zurück" title="Letzten Zug zurücknehmen" disabled>
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>
+      </button>
       <button class="icon-btn" id="btnThemes" aria-label="Designs">
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.4a3.6 3.6 0 0 0 3.6-3.6C21 6.5 17 3 12 3z"/><circle fill="currentColor" cx="7.5" cy="12" r="1.3"/><circle fill="currentColor" cx="9.8" cy="7.8" r="1.3"/><circle fill="currentColor" cx="14.4" cy="7.2" r="1.3"/><circle fill="currentColor" cx="17.4" cy="10.6" r="1.3"/></svg>
       </button>
@@ -59,7 +62,7 @@
 </div>
 
 <!-- Spielende -->
-<div class="overlay center" id="ovOver">
+<div class="overlay center soft" id="ovOver">
   <div class="modal">
     <div class="over-crown">
       <svg viewBox="0 0 24 24" width="54" height="54" aria-hidden="true"><path fill="currentColor" d="M3.2 17.5h17.6l1.7-10-5.6 4L12 3.5 7.1 11.5l-5.6-4 1.7 10z"/><rect fill="currentColor" x="3.2" y="19" width="17.6" height="2.2" rx="1.1"/></svg>
@@ -88,6 +91,7 @@
       </button>
     </div>
     <label class="row auto-row"><span>Bei leerem Feld wechseln</span><input type="checkbox" class="switch" id="optAuto"></label>
+    <div class="unlock-info"><b id="themeCount"></b><span>Neue Designs gibt es für ein leer geräumtes Feld, einen neuen Rekord und für je 2.000 Punkte über alle Partien.</span></div>
     <div class="theme-grid" id="themeGrid"></div>
   </div>
 </div>
@@ -101,10 +105,10 @@
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
-    <label class="row"><span>Ton</span><input type="checkbox" class="switch" id="optSound"></label>
-    <label class="row"><span>Vibration</span><input type="checkbox" class="switch" id="optHaptic"></label>
-    <label class="row"><span>Musik</span><input type="checkbox" class="switch" id="optMusic"></label>
+    <label class="row slider-row"><span>Effekte</span><input type="range" class="slider" id="optSfx" min="0" max="100" step="5" aria-label="Lautstärke Effekte"></label>
+    <label class="row slider-row"><span>Musik</span><input type="range" class="slider" id="optMus" min="0" max="100" step="5" aria-label="Lautstärke Musik"></label>
     <div class="tracks" id="optTrack"></div>
+    <label class="row"><span>Vibration</span><input type="checkbox" class="switch" id="optHaptic"></label>
     <button class="btn primary" id="btnNew">Neues Spiel</button>
   </div>
 </div>

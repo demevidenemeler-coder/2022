@@ -10,13 +10,22 @@
 
   /* ---------- Speicher ---------- */
   const LS = 'prisma.v1';
-  const store = { best: {}, theme: 'jewel', sound: true, haptic: true, auto: true, music: true, track: 0, saves: {} };
+  // sfx/mus: Lautstärken 0–1 (sound/music bleiben als Ja/Nein-Spiegel für ältere Spielstände erhalten)
+  // unlocked: freigeschaltete Designs, total: Punkte aller Partien, ms: eingelöste Punkte-Meilensteine
+  const store = { best: {}, theme: 'jewel', sound: true, haptic: true, auto: true, music: true, track: 0, saves: {}, sfx: 0.8, mus: 0.7, unlocked: null, total: 0, ms: 0 };
   try {
     const raw = JSON.parse(localStorage.getItem(LS) || 'null');
-    if (raw && typeof raw === 'object') Object.assign(store, raw);
+    if (raw && typeof raw === 'object') {
+      Object.assign(store, raw);
+      if (raw.sfx == null) store.sfx = raw.sound === false ? 0 : 0.8;
+      if (raw.mus == null) store.mus = raw.music === false ? 0 : 0.7;
+    }
   } catch (e) { /* kein Speicher verfügbar */ }
   if (!store.best || typeof store.best !== 'object') store.best = {};
   if (!store.saves || typeof store.saves !== 'object') store.saves = {};
+  store.sfx = Math.min(1, Math.max(0, +store.sfx || 0)); store.mus = Math.min(1, Math.max(0, +store.mus || 0));
+  store.sound = store.sfx > 0; store.music = store.mus > 0;
+  store.total = Math.max(0, store.total | 0); store.ms = Math.max(0, store.ms | 0);
   function persist() { try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) { /* ignorieren */ } }
 
   /* ---------- Helfer ---------- */
@@ -31,7 +40,7 @@
   // Audio nach einer Nutzeraktion freischalten und die Hintergrundmusik passend zu den Einstellungen starten/stoppen
   let musicInit = false; // das gespeicherte Stück nur beim ersten Start vorgeben – danach wechselt die Musik von selbst
   function syncMusic() {
-    if (store.music && !document.hidden) { sfx.musicStart(musicInit ? null : store.track | 0); musicInit = sfx.musicState().on; }
+    if (store.mus > 0 && !document.hidden) { sfx.musicStart(musicInit ? null : store.track | 0); musicInit = sfx.musicState().on; }
     else sfx.musicStop();
   }
   function wake() { sfx.unlock(); syncMusic(); }
@@ -39,15 +48,16 @@
 
   /* ---------- Formen ---------- */
   // Die Gewichte (w) sind auf das 8×8-Feld abgestimmt: kleine und mittlere Teile kommen oft, sperrige selten.
+  // Gewicht 0 = das Teil kommt nicht mehr vor (Fünfer-Linien und der 3×3-Block sind auf 8×8 unfair).
   // Die Reihenfolge nicht ändern – gespeicherte Spielstände merken sich die Teile über ihren Index.
   const DEFS = [
     { m: ['#'], w: 1.6 },
     { m: ['##'], w: 2.6 }, { m: ['#', '#'], w: 2.6 },
     { m: ['###'], w: 2.6 }, { m: ['#', '#', '#'], w: 2.6 },
     { m: ['####'], w: 1.4 }, { m: ['#', '#', '#', '#'], w: 1.4 },
-    { m: ['#####'], w: 0.5 }, { m: ['#', '#', '#', '#', '#'], w: 0.5 },
+    { m: ['#####'], w: 0 }, { m: ['#', '#', '#', '#', '#'], w: 0 },
     { m: ['##', '##'], w: 3.6 },
-    { m: ['###', '###', '###'], w: 0.5 },
+    { m: ['###', '###', '###'], w: 0 },
     { m: ['###', '###'], w: 0.8 }, { m: ['##', '##', '##'], w: 0.8 },
     // kleines L
     { m: ['#.', '##'], w: 1.6 }, { m: ['.#', '##'], w: 1.6 }, { m: ['##', '#.'], w: 1.6 }, { m: ['##', '.#'], w: 1.6 },
@@ -66,6 +76,7 @@
     d.m.forEach((row, r) => { for (let c = 0; c < row.length; c++) if (row[c] === '#') cells.push([r, c]); });
     return { id, cells, h: d.m.length, w: d.m[0].length, wt: d.w };
   });
+  const POOL = PIECES.filter(p => p.wt > 0); // Teile, die tatsächlich gezogen werden
 
   /* ---------- Zustand ---------- */
   const cv = $('game'), ctx = cv.getContext('2d', { alpha: false });
@@ -87,6 +98,10 @@
   let over = false, overAt = 0, overShown = false, startBest = 0, recordHit = false, recordRun = false;
   let drag = null, shake = 0, sweepT0 = -9;
   const hlRows = [], hlCols = [];
+  let undo = null;        // Stand vor dem letzten Zug (ein Zug zurück, einmal pro Ablage)
+  let pendingTray = null; // nach einem Zurück: der schon gezeigte nächste Dreier wird wiederverwendet (kein Neu-Würfeln)
+  let scoreTxt = '';      // zuletzt angezeigter Punktestand (DOM nur bei Änderung anfassen)
+  const elUndo = $('btnUndo');
 
   let sprites = [], shadowSp = null, bgCv = null, boardCv = null;
   let cur = null;    // Ebenen des aktuellen Designs (Sprites, Hintergrund, Brett)
@@ -136,7 +151,7 @@
   // jeweils ein passendes Teil gezogen, abgelegt und volle Reihen werden abgeräumt, bevor das nächste gewählt wird.
   // Sucht ein Teil samt Stelle, das das Feld mit einem Zug komplett leer räumt (oder null)
   function findCleaner() {
-    const order = PIECES.slice().sort(() => Math.random() - 0.5);
+    const order = POOL.slice().sort(() => Math.random() - 0.5);
     for (const p of order)
       for (const [r, c] of spotsOn(grid, p)) {
         const sim = Uint8Array.from(grid);
@@ -150,8 +165,8 @@
     const sim = Uint8Array.from(grid), set = [];
     if (first) { simPlace(sim, first.p, first.r, first.c); set.push(first.p); }
     for (let i = set.length; i < 3; i++) {
-      const fit = PIECES.map(p => ({ p, spots: spotsOn(sim, p) })).filter(x => x.spots.length);
-      if (!fit.length) { set.push(PIECES[0]); continue; }
+      const fit = POOL.map(p => ({ p, spots: spotsOn(sim, p) })).filter(x => x.spots.length);
+      if (!fit.length) { set.push(POOL[0]); continue; }
       let x = Math.random() * fit.reduce((t, f) => t + f.p.wt, 0), pick = fit[0];
       for (const f of fit) { x -= f.p.wt; if (x <= 0) { pick = f; break; } }
       const spot = pick.spots[(Math.random() * pick.spots.length) | 0];
@@ -180,7 +195,7 @@
   function updFits() { tray.forEach(t => { if (t) t.fits = fitsAnywhere(t.piece); }); }
 
   function resetRun() {
-    over = false; overShown = false; drag = null; shake = 0;
+    over = false; overShown = false; drag = null; shake = 0; undo = null; pendingTray = null;
     dying.length = beams.length = rings.length = floaters.length = banners.length = glints.length = 0;
     hlRows.length = hlCols.length = 0;
     startBest = store.best[N] || 0;
@@ -191,13 +206,21 @@
     stats = { lines: 0, combo: 0, designs: 0 };
     refill(); updFits();
     sweepT0 = T;
-    refreshHud(); saveGame();
+    refreshHud(); updUndoBtn(); saveGame();
+  }
+  // Spielstand als einfaches Objekt (für Speichern und für "Zug zurück")
+  const trayIds = tr => tr.map(t => (t ? { p: t.piece.id, c: t.color } : null));
+  function snapState() {
+    return { g: Array.from(grid), s: score, k: streak, m: sinceClear, w: seriesSwitched ? 1 : 0, st: Object.assign({}, stats), t: trayIds(tray) };
+  }
+  function traySlot(x, i, born) {
+    return x && PIECES[x.p] ? { piece: PIECES[x.p], color: clamp(x.c | 0, 1, 7), born, ret: null, fits: true } : null;
   }
   function saveGame() {
-    store.saves[N] = {
-      g: Array.from(grid), s: score, k: streak, m: sinceClear, w: seriesSwitched ? 1 : 0, st: stats,
-      t: tray.map(t => (t ? { p: t.piece.id, c: t.color } : null)),
-    };
+    const s = snapState();
+    if (undo) s.u = undo;
+    if (pendingTray) s.pt = pendingTray;
+    store.saves[N] = s;
     persist();
   }
   function loadGame() {
@@ -210,19 +233,47 @@
     const st = s.st || {};
     stats = { lines: st.lines | 0, combo: st.combo | 0, designs: st.designs | 0 };
     recordHit = recordRun = score > 0 && score >= startBest;
-    tray = [0, 1, 2].map(i => {
-      const x = s.t[i];
-      return x && PIECES[x.p] ? { piece: PIECES[x.p], color: clamp(x.c | 0, 1, 7), born: T + 0.1 + i * 0.09, ret: null, fits: true } : null;
-    });
+    tray = [0, 1, 2].map(i => traySlot(s.t[i], i, T + 0.1 + i * 0.09));
     if (!tray.some(Boolean)) refill();
     updFits();
     if (!tray.some(t => t && t.fits)) return false;
-    refreshHud();
+    if (s.u && Array.isArray(s.u.g) && s.u.g.length === N * N && Array.isArray(s.u.t)) undo = s.u;
+    if (Array.isArray(s.pt) && s.pt.length === 3) pendingTray = s.pt;
+    refreshHud(); updUndoBtn();
     return true;
+  }
+
+  /* ---------- Ein Zug zurück ---------- */
+  function updUndoBtn() { elUndo.disabled = !undo || over; }
+  function undoMove() {
+    if (!undo || over || drag) return;
+    const u = undo, c = L.cell;
+    undo = null;
+    // Steine, die der letzte Zug gelegt hat, lösen sich in Funken auf; abgeräumte Reihen kommen zurück
+    for (let i = 0; i < grid.length; i++) {
+      const was = clamp(u.g[i] | 0, 0, 7);
+      if (grid[i] && !was) burst(L.gx + ((i % N) + 0.5) * c, L.gy + (((i / N) | 0) + 0.5) * c, theme.colors[grid[i] - 1], 0.35);
+      if (was && !grid[i]) pop[i] = T + ((i / N) | 0) * 0.02;
+      grid[i] = was;
+    }
+    // Hat der Zug einen neuen Dreier gebracht, merken wir ihn uns – er kommt beim nächsten Ablegen wieder
+    const refilled = u.t.filter(Boolean).length === 1 && tray.filter(Boolean).length === 3;
+    if (refilled) pendingTray = trayIds(tray);
+    const old = tray;
+    tray = [0, 1, 2].map(i => traySlot(u.t[i], i, old[i] && !refilled ? T - 1 : T + 0.05 + i * 0.07));
+    score = Math.max(0, u.s | 0); streak = Math.max(0, u.k | 0); sinceClear = Math.max(0, u.m | 0); seriesSwitched = !!u.w && streak > 0;
+    const st = u.st || {};
+    stats = { lines: st.lines | 0, combo: st.combo | 0, designs: stats.designs };
+    dying.length = beams.length = hlRows.length = hlCols.length = 0; hlSet.fill(0);
+    updFits(); updStreak(); updUndoBtn();
+    sfx.back(); vib(10);
+    saveGame();
   }
 
   function place(i, r0, c0) {
     const t = tray[i], pc = t.piece, c = L.cell, col = theme.colors[t.color - 1];
+    undo = snapState();
+    const before = score;
     tray[i] = null;
     pc.cells.forEach(([r, q], k) => {
       const idx = (r0 + r) * N + c0 + q;
@@ -249,9 +300,19 @@
     else { sinceClear++; if (sinceClear >= 3) { streak = 0; seriesSwitched = false; } }
     updStreak();
     checkRecord();
-    if (!tray[0] && !tray[1] && !tray[2]) refill();
+    if (!tray[0] && !tray[1] && !tray[2]) {
+      // Nach einem "Zug zurück" kommt derselbe Dreier wieder – sofern er noch passt
+      const pt = pendingTray;
+      pendingTray = null;
+      if (pt) tray = [0, 1, 2].map(k => traySlot(pt[k], k, T + 0.1 + k * 0.09));
+      if (!pt || tray.some(x => !x || !fitsAnywhere(x.piece))) refill();
+    }
     updFits();
     elScore.classList.remove('bump'); void elScore.offsetWidth; elScore.classList.add('bump');
+    // Punkte aller Partien zählen – alle MS_STEP Punkte wird ein neues Design frei
+    store.total += score - before;
+    while (store.total >= MS_STEP * (store.ms + 1)) { store.ms++; unlockRandom(nextL && nextL.theme); }
+    updUndoBtn();
     if (!tray.some(x => x && x.fits)) endGame(); else saveGame();
   }
 
@@ -303,16 +364,21 @@
       pushBanner('Neuer Rekord!', '', '#ffc93c');
       sfx.record(); confetti(80);
       elBestPill.classList.remove('glow'); void elBestPill.offsetWidth; elBestPill.classList.add('glow');
+      unlockRandom(nextL && nextL.theme); // ein Rekord schaltet ein Design frei
     }
   }
 
+  // Spielende: erst wackeln die Teile kurz (nichts passt mehr), dann wird das Feld Reihe für Reihe grau,
+  // und das Feld bleibt noch einen Moment sichtbar, bevor das Fenster kommt
+  let overStart = 0;
   function endGame() {
-    over = true; drag = null; clearPreview();
-    const start = T + 0.75;
+    over = true; drag = null; clearPreview(); undo = null; updUndoBtn();
+    overStart = T + 1.05;
+    const start = overStart;
     for (let r = 0; r < N; r++)
       for (let q = 0; q < N; q++) { const i = r * N + q; grey[i] = grid[i] ? start + (N - 1 - r) * 0.07 + q * 0.012 : 0; }
-    overAt = start + N * 0.07 + 0.6; overShown = false;
-    setTimeout(() => { if (over) sfx.over(); }, 750);
+    overAt = start + N * 0.07 + 1.1; overShown = false;
+    setTimeout(() => { if (over) sfx.over(); }, 1050);
     delete store.saves[N]; persist();
   }
   function showOver() {
@@ -388,25 +454,74 @@
     prepNext();
   }
 
+  /* ---------- Freischalten der Designs ---------- */
+  // Die ersten FREE Designs sind offen. Neue gibt es für ein leer geräumtes Feld (das Design, zu dem
+  // gewechselt wird), für einen neuen Rekord und für je MS_STEP Punkte über alle Partien hinweg.
+  const FREE = 8, MS_STEP = 2000;
+  if (!Array.isArray(store.unlocked)) store.unlocked = THEMES.slice(0, FREE).map(t => t.id);
+  if (!store.unlocked.includes(theme.id)) store.unlocked.push(theme.id);
+  const isUnlocked = th => store.unlocked.includes(th.id);
+  const lockedThemes = () => THEMES.filter(t => !isUnlocked(t));
+  function unlockTheme(th, quiet) {
+    if (!th || isUnlocked(th)) return;
+    store.unlocked.push(th.id); persist();
+    refreshLocks();
+    if (!quiet) { pushBanner('Neues Design!', th.name, theme.ui.accent); sfx.theme(); }
+  }
+  // Schaltet ein zufälliges gesperrtes Design frei (nicht das, das als nächstes ohnehin kommt)
+  function unlockRandom(except) {
+    let pool = lockedThemes().filter(t => t !== except);
+    if (!pool.length) pool = lockedThemes();
+    if (pool.length) unlockTheme(pool[(Math.random() * pool.length) | 0], false);
+  }
+
   /* ---------- Design-Wechsel ---------- */
+  // Solange es gesperrte Designs gibt, zeigt der Wechsel bei leerem Feld ein neues; danach alle im Wechsel
   function nextTheme() {
+    const locked = lockedThemes().filter(t => t !== theme);
+    if (locked.length) return locked[(Math.random() * locked.length) | 0];
     if (!bag.length) {
-      bag = THEMES.filter(t => t !== theme);
+      bag = THEMES.filter(t => t !== theme && isUnlocked(t));
       for (let i = bag.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0, t = bag[i]; bag[i] = bag[j]; bag[j] = t; }
     }
     const th = bag.pop();
     return th === theme ? nextTheme() : th;
   }
-  // Das nächste Design in einer ruhigen Phase vorbereiten, damit der Wechsel selbst nicht ruckelt
+  // Das nächste Design in einer ruhigen Phase vorbereiten, damit der Wechsel selbst nicht ruckelt.
+  // Die Ebenen entstehen häppchenweise (je ein Sprite, dann Hintergrund, dann Brett) über mehrere Frames,
+  // damit kein einzelner Frame hängt. prepGen macht laufende Vorbereitungen ungültig.
+  let prepGen = 0;
   function prepNext() {
     clearTimeout(prepTimer);
+    const gen = ++prepGen;
     if (!store.auto || THEMES.length < 2) return;
-    const run = () => {
-      if (nextL || !L) return;
-      if (drag) { prepTimer = setTimeout(run, 350); return; }
-      nextL = buildLayers(nextTheme());
+    const start = () => {
+      if (nextL || !L || gen !== prepGen) return;
+      if (drag || dying.length || tr) { prepTimer = setTimeout(start, 350); return; }
+      const th = nextTheme(), s = Math.max(4, Math.round(L.cell * DPR));
+      const o = { theme: th, sprites: [], bgCv: null, boardCv: null };
+      const steps = [() => { o.sprites.push(P.makeSprite(th.block, '#868b96', s, 99)); }];
+      th.colors.forEach((c, i) => steps.push(() => { o.sprites.push(P.makeSprite(th.block, c, s, 7 + i * 13)); }));
+      steps.push(() => {
+        o.bgCv = makeCanvas(W * DPR, H * DPR);
+        const g = o.bgCv.getContext('2d'); g.scale(DPR, DPR); th.bg(g, W, H, P.rng(1234));
+      });
+      steps.push(() => {
+        o.boardCv = makeCanvas((L.bs + 2 * BM) * DPR, (L.bs + L.gap + L.trayH + 2 * BM) * DPR);
+        const g = o.boardCv.getContext('2d'); g.scale(DPR, DPR); g.translate(BM, BM);
+        P.paintBoard(g, L, N, th, DPR);
+      });
+      let k = 0;
+      const step = () => {
+        if (gen !== prepGen) { freeLayers(o); return; }
+        if (drag) { prepTimer = setTimeout(step, 200); return; }
+        steps[k++]();
+        if (k < steps.length) prepTimer = setTimeout(step, 40);
+        else if (!nextL) nextL = o; else freeLayers(o);
+      };
+      step();
     };
-    prepTimer = setTimeout(run, 1100);
+    prepTimer = setTimeout(start, 900);
   }
   // Blendet das Design o kreisförmig von (x, y) aus ein
   function switchTheme(o, x, y) {
@@ -430,7 +545,9 @@
     let o = nextL;
     nextL = null;
     if (!o || o.theme === theme) { freeLayers(o); o = buildLayers(nextTheme()); }
+    const fresh = !isUnlocked(o.theme);
     switchTheme(o, x, y);
+    if (fresh) { unlockTheme(o.theme, true); showToast('Neues Design: ' + o.theme.name); }
     stats.designs++;
     sfx.whoosh();
     prepNext();
@@ -606,7 +723,8 @@
     if (shown !== score) {
       shown += (score - shown) * Math.min(1, dt * 12);
       if (Math.abs(score - shown) < 0.6) shown = score;
-      elScore.textContent = fmt(shown);
+      const txt = fmt(shown);
+      if (txt !== scoreTxt) { scoreTxt = txt; elScore.textContent = txt; } // Text mit Schatten nur neu setzen, wenn er sich ändert
     }
     updAmbient(amb, theme.ambient, dt, true);
     if (tr) {
@@ -870,31 +988,59 @@
       if (!t || (drag && drag.i === i)) continue;
       const h = slotC(i), k = (T - t.born) / 0.38;
       const grow = k <= 0 ? 0 : k >= 1 ? 1 : easeOutBack(k);
-      let x = h.x, y = h.y, sc = trayScale(t.piece);
+      let x = h.x, y = h.y, sc = trayScale(t.piece), ci = t.color;
       if (t.ret) {
         const u = (T - t.ret.t0) / 0.2;
         if (u >= 1) t.ret = null;
         else { const e = easeOutCubic(u); x = lerp(t.ret.x, h.x, e); y = lerp(t.ret.y, h.y, e); sc = lerp(1, sc, e); }
       } else y += Math.sin(T * 2.2 + i * 1.7) * 1.6;
-      drawPiece(t.piece, t.color, x, y, L.cell * sc * grow, t.fits ? 1 : 0.36, false);
+      if (over) {
+        // Spielende: die Teile schütteln kurz den Kopf ("passt nirgends"), später werden sie grau
+        const w = clamp((overStart - T) / 0.9, 0, 1);
+        if (w > 0) x += Math.sin((T - overStart) * 34 + i) * 4 * w;
+        if (T >= overStart + N * 0.07 + 0.2) ci = 0;
+      }
+      drawPiece(t.piece, ci, x, y, L.cell * sc * grow, over ? 0.8 : t.fits ? 1 : 0.36, false);
     }
   }
 
+  // Text mit Kontur einmal in ein Bitmap zeichnen, statt ihn jeden Frame neu zu setzen (strokeText ist
+  // auf dem iPhone teuer). lines: [{ text, fs, fill, stroke, lw, dy }], dy = Mittellinie relativ zur ersten Zeile
+  function textSprite(lines) {
+    const pad = 8;
+    let w = 0, top = 0, bot = 0;
+    for (const l of lines) {
+      ctx.font = '700 ' + l.fs + 'px ' + FONT;
+      w = Math.max(w, ctx.measureText(l.text).width + l.lw * 2);
+      top = Math.min(top, l.dy - l.fs * 0.75); bot = Math.max(bot, l.dy + l.fs * 0.75);
+    }
+    const cw = Math.ceil(w + pad * 2), ch = Math.ceil(bot - top + pad * 2), oy = pad - top;
+    const cv2 = makeCanvas(cw * DPR, ch * DPR), g = cv2.getContext('2d');
+    g.scale(DPR, DPR); g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+    for (const l of lines) {
+      g.font = '700 ' + l.fs + 'px ' + FONT;
+      const y = oy + l.dy;
+      if (l.stroke) { g.lineWidth = l.lw; g.strokeStyle = l.stroke; g.strokeText(l.text, cw / 2, y); }
+      g.fillStyle = typeof l.fill === 'function' ? l.fill(g, y, l.fs) : l.fill;
+      g.fillText(l.text, cw / 2, y);
+    }
+    return { cv: cv2, w: cw, h: ch, ox: cw / 2, oy };
+  }
+  function drawSprite(s) { ctx.drawImage(s.cv, -s.ox, -s.oy, s.w, s.h); }
+
   function drawFloaters() {
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
     const fs = L.cell * 0.8;
     for (let i = floaters.length - 1; i >= 0; i--) {
       const f = floaters[i], t = T - f.t0;
       if (t < 0) continue;
-      if (t >= 1) { floaters.splice(i, 1); continue; }
+      if (t >= 1) { if (f.sp) freeCanvas(f.sp.cv); floaters.splice(i, 1); continue; }
+      if (!f.sp) f.sp = textSprite([{ text: f.text, fs, fill: lighten(f.col, 0.6), stroke: 'rgba(12,14,36,0.88)', lw: fs * 0.2, dy: 0 }]);
       const sc = t < 0.2 ? easeOutBack(t / 0.2) : 1;
       ctx.save();
       ctx.translate(clamp(f.x, L.bx + fs * 1.4, L.bx + L.bs - fs * 1.4), f.y - easeOutCubic(t) * L.cell * 1.7);
       ctx.scale(sc, sc);
       ctx.globalAlpha = t > 0.65 ? 1 - (t - 0.65) / 0.35 : 1;
-      ctx.font = '700 ' + fs + 'px ' + FONT;
-      ctx.lineWidth = fs * 0.2; ctx.strokeStyle = 'rgba(12,14,36,0.88)'; ctx.strokeText(f.text, 0, 0);
-      ctx.fillStyle = lighten(f.col, 0.6); ctx.fillText(f.text, 0, 0);
+      drawSprite(f.sp);
       ctx.restore();
     }
     ctx.globalAlpha = 1;
@@ -906,27 +1052,23 @@
     if (!b.t0) b.t0 = T;
     const t = T - b.t0;
     if (t < 0) return;
-    if (t > 1.3) { banners.shift(); return; }
+    if (t > 1.3) { if (b.sp) freeCanvas(b.sp.cv); banners.shift(); return; }
+    if (!b.sp) {
+      let fs = L.bs * 0.15;
+      ctx.font = '700 ' + fs + 'px ' + FONT;
+      const tw = ctx.measureText(b.text).width, maxW = Math.min(W - 24, L.bs * 1.02);
+      if (tw > maxW) fs *= maxW / tw;
+      const grad = (g, y, f) => { const gr = g.createLinearGradient(0, y - f * 0.5, 0, y + f * 0.5); gr.addColorStop(0, '#ffffff'); gr.addColorStop(1, lighten(b.col, 0.25)); return gr; };
+      const lines = [{ text: b.text, fs, fill: grad, stroke: 'rgba(10,12,34,0.9)', lw: fs * 0.17, dy: 0 }];
+      if (b.sub) { const f2 = fs * 0.46; lines.push({ text: b.sub, fs: f2, fill: '#ffffff', stroke: 'rgba(10,12,34,0.9)', lw: f2 * 0.22, dy: fs * 0.82 }); }
+      b.sp = textSprite(lines);
+    }
     let sc = 1, a = 1, dy = 0;
     if (t < 0.3) { sc = lerp(2.5, 1, easeOutBack(t / 0.3)); a = Math.min(1, t / 0.12); }
     else if (t > 0.9) { const u = (t - 0.9) / 0.4; a = 1 - u; dy = -L.cell * u; sc = 1 + 0.12 * u; }
-    let fs = L.bs * 0.15;
     ctx.save();
-    ctx.font = '700 ' + fs + 'px ' + FONT;
-    const tw = ctx.measureText(b.text).width, maxW = Math.min(W - 24, L.bs * 1.02);
-    if (tw > maxW) { fs *= maxW / tw; ctx.font = '700 ' + fs + 'px ' + FONT; }
     ctx.translate(W / 2, L.by + L.bs * 0.42 + dy); ctx.scale(sc, sc); ctx.globalAlpha = a;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
-    ctx.lineWidth = fs * 0.17; ctx.strokeStyle = 'rgba(10,12,34,0.9)'; ctx.strokeText(b.text, 0, 0);
-    const g = ctx.createLinearGradient(0, -fs * 0.5, 0, fs * 0.5);
-    g.addColorStop(0, '#ffffff'); g.addColorStop(1, lighten(b.col, 0.25));
-    ctx.fillStyle = g; ctx.fillText(b.text, 0, 0);
-    if (b.sub) {
-      const f2 = fs * 0.46;
-      ctx.font = '700 ' + f2 + 'px ' + FONT;
-      ctx.lineWidth = f2 * 0.22; ctx.strokeText(b.sub, 0, fs * 0.82);
-      ctx.fillStyle = '#ffffff'; ctx.fillText(b.sub, 0, fs * 0.82);
-    }
+    drawSprite(b.sp);
     ctx.restore();
   }
 
@@ -1083,6 +1225,7 @@
   function setTheme(id) {
     const th = THEMES.find(t => t.id === id);
     if (!th || th === theme) return;
+    if (!isUnlocked(th)) { showToast('Noch gesperrt – spiel weiter!'); sfx.back(); return; }
     let o = null;
     if (nextL && nextL.theme === th) { o = nextL; nextL = null; }
     switchTheme(o || buildLayers(th), W / 2, L.by + L.bs / 2);
@@ -1097,7 +1240,7 @@
     const pattern = [[0, 0, 1], [1, 0, 1], [3, 0, 3], [0, 1, 4], [1, 1, 2], [2, 1, 2], [3, 1, 3], [0, 2, 4], [1, 2, 5], [2, 2, 6], [3, 2, 7]];
     const addCard = th => {
       const btn = document.createElement('button');
-      btn.className = 'theme-card' + (th.id === theme.id ? ' active' : '');
+      btn.className = 'theme-card' + (th.id === theme.id ? ' active' : '') + (isUnlocked(th) ? '' : ' locked');
       btn.dataset.id = th.id;
       const c = makeCanvas(pw * dpr, ph * dpr), g = c.getContext('2d');
       g.scale(dpr, dpr);
@@ -1125,10 +1268,19 @@
       if (idx < THEMES.length) setTimeout(step, 16);
     };
     step();
+    refreshLocks();
+  }
+  // Schloss-Symbole und Zähler in der Design-Auswahl auffrischen
+  function refreshLocks() {
+    document.querySelectorAll('.theme-card').forEach(el => el.classList.toggle('locked', !store.unlocked.includes(el.dataset.id)));
+    const n = THEMES.filter(isUnlocked).length;
+    $('themeCount').textContent = n + ' von ' + THEMES.length + ' Designs frei';
   }
   function openThemes() { syncSettings(); buildThemeGrid(); openOv('ovThemes'); }
 
-  function syncSettings() { $('optSound').checked = !!store.sound; $('optHaptic').checked = !!store.haptic; $('optAuto').checked = !!store.auto; $('optMusic').checked = !!store.music;
+  function syncSettings() {
+    $('optSfx').value = Math.round(store.sfx * 100); $('optMus').value = Math.round(store.mus * 100);
+    $('optHaptic').checked = !!store.haptic; $('optAuto').checked = !!store.auto;
     document.querySelectorAll('#optTrack button').forEach((b, i) => b.classList.toggle('on', i === (sfx.musicState().on ? sfx.musicState().track : store.track | 0)));
   }
 
@@ -1150,18 +1302,26 @@
     tap('btnSettings', () => { syncSettings(); openOv('ovSettings'); });
     tap('btnAgain', () => { closeOv('ovOver'); newGame(); });
     tap('btnNew', () => { closeOv('ovSettings'); closeOv('ovOver'); newGame(); });
-    $('optSound').addEventListener('change', e => { store.sound = e.target.checked; sfx.setEnabled(store.sound); persist(); wake(); sfx.click(); });
+    elUndo.addEventListener('click', () => { wake(); undoMove(); });
+    // Lautstärke-Regler: Effekte und Musik getrennt; 0 = aus
+    $('optSfx').addEventListener('input', e => { store.sfx = clamp(e.target.value / 100, 0, 1); store.sound = store.sfx > 0; sfx.setSfxVolume(store.sfx); });
+    $('optSfx').addEventListener('change', () => { persist(); wake(); sfx.click(); });
+    $('optMus').addEventListener('input', e => { store.mus = clamp(e.target.value / 100, 0, 1); store.music = store.mus > 0; sfx.setMusicVolume(store.mus); wake(); });
+    $('optMus').addEventListener('change', () => persist());
     $('optHaptic').addEventListener('change', e => { store.haptic = e.target.checked; persist(); vib(20); });
-    $('optMusic').addEventListener('change', e => { store.music = e.target.checked; persist(); wake(); });
     sfx.musicNames.forEach((name, i) => {
       const b = document.createElement('button');
       b.textContent = name;
-      b.addEventListener('click', () => { store.track = i; store.music = true; persist(); sfx.unlock(); sfx.musicStart(i); musicInit = true; sfx.click(); syncSettings(); });
+      b.addEventListener('click', () => {
+        store.track = i;
+        if (store.mus <= 0) { store.mus = 0.7; store.music = true; sfx.setMusicVolume(store.mus); }
+        persist(); sfx.unlock(); sfx.musicStart(i); musicInit = true; sfx.click(); syncSettings();
+      });
       $('optTrack').appendChild(b);
     });
     $('optAuto').addEventListener('change', e => {
       store.auto = e.target.checked; persist(); wake(); sfx.click();
-      if (store.auto) prepNext(); else { clearTimeout(prepTimer); freeLayers(nextL); nextL = null; }
+      if (store.auto) prepNext(); else { clearTimeout(prepTimer); prepGen++; freeLayers(nextL); nextL = null; }
     });
     // Sheets schließen: X-Button oder Tipp neben das Sheet
     document.querySelectorAll('.overlay.top').forEach(ov => {
@@ -1174,7 +1334,7 @@
   }
 
   /* ---------- Start ---------- */
-  sfx.setEnabled(store.sound);
+  sfx.setSfxVolume(store.sfx); sfx.setMusicVolume(store.mus);
   alloc();
   applyUi();
   layout();

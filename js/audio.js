@@ -2,7 +2,8 @@
 (function () {
   'use strict';
   const P = (window.PRISMA = window.PRISMA || {});
-  let ac = null, master = null, enabled = true, noiseBuf = null;
+  let ac = null, master = null, sfxBus = null, enabled = true, noiseBuf = null;
+  let sfxVol = 0.8, musVol = 0.7; // Lautstärken 0–1, getrennt für Effekte und Musik
 
   function unlock() {
     if (!ac) {
@@ -11,6 +12,7 @@
         master = ac.createGain(); master.gain.value = 0.55;
         const comp = ac.createDynamicsCompressor();
         master.connect(comp); comp.connect(ac.destination);
+        sfxBus = ac.createGain(); sfxBus.gain.value = sfxVol; sfxBus.connect(master);
         noiseBuf = ac.createBuffer(1, ac.sampleRate * 0.5, ac.sampleRate);
         const d = noiseBuf.getChannelData(0);
         for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -30,7 +32,7 @@
     g.gain.setValueAtTime(0.0001, t0);
     g.gain.exponentialRampToValueAtTime(o.v || 0.2, t0 + (o.a || 0.006));
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
-    osc.connect(g); g.connect(master);
+    osc.connect(g); g.connect(sfxBus);
     osc.start(t0); osc.stop(t0 + d + 0.03);
   }
 
@@ -43,7 +45,7 @@
     if (o.f2) f.frequency.exponentialRampToValueAtTime(o.f2, t0 + d);
     g.gain.setValueAtTime(o.v || 0.15, t0);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
-    src.connect(f); f.connect(g); g.connect(master);
+    src.connect(f); f.connect(g); g.connect(sfxBus);
     src.start(t0); src.stop(t0 + d + 0.03);
   }
 
@@ -165,7 +167,7 @@
         mFading = false;
         if (!mOn) return;
         mTrack = (mTrack + 1) % TRACKS.length; mStep = 0; mNext = 0; mSwitchAt = ac.currentTime + TRACK_SECS;
-        mOut.gain.setTargetAtTime(0.6, ac.currentTime, 0.6);
+        mOut.gain.setTargetAtTime(0.6 * musVol, ac.currentTime, 0.6);
       }, 2200);
     }
     if (mFading) return;
@@ -184,9 +186,17 @@
     if (mOn) return;
     mOn = true; mNext = 0; mSwitchAt = ac.currentTime + TRACK_SECS;
     mOut.gain.cancelScheduledValues(ac.currentTime);
-    mOut.gain.setTargetAtTime(0.6, ac.currentTime, 0.5);
+    mOut.gain.setTargetAtTime(0.6 * musVol, ac.currentTime, 0.5);
     mTimer = setInterval(mTick, 60);
     mTick();
+  }
+  function setSfxVolume(v) {
+    sfxVol = Math.min(1, Math.max(0, +v || 0)); enabled = sfxVol > 0;
+    if (sfxBus) sfxBus.gain.setTargetAtTime(sfxVol, ac.currentTime, 0.03);
+  }
+  function setMusicVolume(v) {
+    musVol = Math.min(1, Math.max(0, +v || 0));
+    if (mOn && mOut && !mFading) mOut.gain.setTargetAtTime(0.6 * musVol, ac.currentTime, 0.08);
   }
   function musicStop() {
     if (!mOn) return;
@@ -199,7 +209,8 @@
 
   P.audio = {
     unlock,
-    setEnabled(v) { enabled = !!v; },
+    setEnabled(v) { enabled = !!v && sfxVol > 0; },
+    setSfxVolume, setMusicVolume,
     musicStart, musicStop,
     musicNames: TRACKS.map(t => t.name),
     musicState() { return { on: mOn, track: mTrack, step: mStep, ctx: ac ? ac.state : 'none' }; },
