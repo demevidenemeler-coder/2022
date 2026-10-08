@@ -77,6 +77,8 @@
   const N = 8; // Spielfeld 8 × 8
   // Reihen-Auflösung: Farbwechsel (umklappen) → kurz halten → zerplatzen
   const FLIP = 0.2, HOLD = 0.1, OUT = 0.36;
+  // Hilfe zum Leerräumen: ab höchstens so vielen Steinen, mit dieser Wahrscheinlichkeit pro neuem Dreier
+  const CLEAN_MAX = 14, CLEAN_CHANCE = 0.5;
   let grid, pop, grey, hlSet, tmpGrid;
   let tray = [null, null, null];
   let score = 0, shown = 0, streak = 0, sinceClear = 0;
@@ -132,9 +134,22 @@
   }
   // Drei neue Teile, die garantiert alle nacheinander aufs Feld passen: Auf einer Probe-Kopie wird
   // jeweils ein passendes Teil gezogen, abgelegt und volle Reihen werden abgeräumt, bevor das nächste gewählt wird.
-  function drawSet() {
+  // Sucht ein Teil samt Stelle, das das Feld mit einem Zug komplett leer räumt (oder null)
+  function findCleaner() {
+    const order = PIECES.slice().sort(() => Math.random() - 0.5);
+    for (const p of order)
+      for (const [r, c] of spotsOn(grid, p)) {
+        const sim = Uint8Array.from(grid);
+        simPlace(sim, p, r, c);
+        if (!sim.some(Boolean)) return { p, r, c };
+      }
+    return null;
+  }
+  // first: optionales Teil, das fest als erstes in den Dreier kommt
+  function drawSet(first) {
     const sim = Uint8Array.from(grid), set = [];
-    for (let i = 0; i < 3; i++) {
+    if (first) { simPlace(sim, first.p, first.r, first.c); set.push(first.p); }
+    for (let i = set.length; i < 3; i++) {
       const fit = PIECES.map(p => ({ p, spots: spotsOn(sim, p) })).filter(x => x.spots.length);
       if (!fit.length) { set.push(PIECES[0]); continue; }
       let x = Math.random() * fit.reduce((t, f) => t + f.p.wt, 0), pick = fit[0];
@@ -149,9 +164,14 @@
   }
   function refill() {
     // Mehrere Versuche: am liebsten ein Dreier, bei dem jedes Teil schon jetzt irgendwo passt
+    // Kleine Hilfe zum Leerräumen: Liegen nur noch wenige Steine, ist in jedem zweiten Fall ein Teil dabei,
+    // das alles auf einmal abräumt – sofern es so ein Teil überhaupt gibt. Finden muss man den Zug selbst.
+    let filled = 0;
+    for (let i = 0; i < grid.length; i++) if (grid[i]) filled++;
+    const helper = filled > 0 && filled <= CLEAN_MAX && Math.random() < CLEAN_CHANCE ? findCleaner() : null;
     let set = null, most = -1;
     for (let i = 0; i < 12 && most < 3; i++) {
-      const cand = drawSet(), n = cand.filter(fitsAnywhere).length;
+      const cand = drawSet(helper), n = cand.filter(fitsAnywhere).length;
       if (n > most) { most = n; set = cand; }
     }
     for (let i = 0; i < 3; i++)
