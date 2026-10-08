@@ -74,7 +74,7 @@
   }
 
   /* ---------- Zustand ---------- */
-  const cv = $('game'), ctx = cv.getContext('2d');
+  const cv = $('game'), ctx = cv.getContext('2d', { alpha: false });
   const topCv = $('fxTop'), tctx = topCv.getContext('2d');
   const elScore = $('score'), elBest = $('best'), elStreak = $('streak'), elBestPill = $('bestPill'), elToast = $('toast');
 
@@ -353,7 +353,12 @@
   function prepNext() {
     clearTimeout(prepTimer);
     if (!store.auto || THEMES.length < 2) return;
-    prepTimer = setTimeout(() => { if (!nextL && L) nextL = buildLayers(nextTheme()); }, 1100);
+    const run = () => {
+      if (nextL || !L) return;
+      if (drag) { prepTimer = setTimeout(run, 350); return; }
+      nextL = buildLayers(nextTheme());
+    };
+    prepTimer = setTimeout(run, 1100);
   }
   // Blendet das Design o kreisförmig von (x, y) aus ein
   function switchTheme(o, x, y) {
@@ -589,14 +594,17 @@
     const fc = (tx - (pc.w * c) / 2 - L.gx) / c, fr = (ty - (pc.h * c) / 2 - L.gy) / c;
     const rc = Math.round(fc), rw = Math.round(fr);
     let best = null, bd = 1e9;
-    for (let dr = -1; dr <= 1; dr++)
-      for (let dc = -1; dc <= 1; dc++) {
+    // Die nächstgelegene freie Stelle im Umkreis von zwei Feldern nehmen – man muss nicht genau zielen.
+    // Die aktuelle Stelle "klebt" etwas, damit das Teil an Feldgrenzen nicht hin- und herspringt.
+    for (let dr = -2; dr <= 2; dr++)
+      for (let dc = -2; dc <= 2; dc++) {
         const r0 = rw + dr, c0 = rc + dc;
         if (!canPlace(pc, r0, c0)) continue;
-        const dist = Math.hypot(r0 - fr, c0 - fc);
+        let dist = Math.hypot(r0 - fr, c0 - fc);
+        if (d.snap && d.snap[0] === r0 && d.snap[1] === c0) dist -= 0.3;
         if (dist < bd) { bd = dist; best = [r0, c0]; }
       }
-    if (best && bd > 0.85) best = null;
+    if (best && bd > 1.5) best = null;
     const key = best ? best[0] * 100 + best[1] : -1;
     if (key !== d.key) { d.key = key; d.snap = best; computePreview(); }
   }
@@ -864,8 +872,7 @@
     ctx.lineWidth = fs * 0.17; ctx.strokeStyle = 'rgba(10,12,34,0.9)'; ctx.strokeText(b.text, 0, 0);
     const g = ctx.createLinearGradient(0, -fs * 0.5, 0, fs * 0.5);
     g.addColorStop(0, '#ffffff'); g.addColorStop(1, lighten(b.col, 0.25));
-    ctx.shadowColor = b.col; ctx.shadowBlur = 22 * DPR; ctx.fillStyle = g; ctx.fillText(b.text, 0, 0);
-    ctx.shadowBlur = 0;
+    ctx.fillStyle = g; ctx.fillText(b.text, 0, 0);
     if (b.sub) {
       const f2 = fs * 0.46;
       ctx.font = '700 ' + f2 + 'px ' + FONT;
@@ -889,7 +896,6 @@
     ctx.globalAlpha = (1 - k) * 0.7; ctx.strokeStyle = theme.ui.accent; ctx.lineWidth = 4 + 14 * (1 - k);
     ctx.beginPath(); ctx.arc(tr.x, tr.y, tr.r, 0, TAU); ctx.stroke();
     ctx.globalAlpha = 1 - k; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5 + 4 * (1 - k);
-    ctx.shadowColor = theme.ui.accent; ctx.shadowBlur = 20 * DPR;
     ctx.stroke();
     ctx.restore();
   }
@@ -928,13 +934,16 @@
       tctx.clearRect(0, 0, W, H);
       drawParts(tctx, conf);
       topDirty = conf.length > 0;
+      topCv.style.display = topDirty ? 'block' : 'none';
     }
   }
 
+  let frameNo = 0;
   function frame(now) {
     const dt = clamp((now - last) / 1000, 0, 0.05);
     last = now; T = now / 1000;
-    update(dt); render();
+    update(dt);
+    if (tr || !(frameNo++ % 6) || !document.querySelector('.overlay.open')) render();
     requestAnimationFrame(frame);
   }
 
@@ -1000,7 +1009,7 @@
     const bright = lum(u.accent) > 0.3; // helle Akzentfarbe → dunkle Button-Schrift, sonst weiße
     s.setProperty('--accent', u.accent); s.setProperty('--accent-l', lighten(u.accent, bright ? 0.4 : 0.18)); s.setProperty('--accent-d', darken(u.accent, 0.38));
     s.setProperty('--btn-txt', bright ? '#10142c' : '#ffffff');
-    s.setProperty('--pill-bg', u.dark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.55)');
+    s.setProperty('--pill-bg', u.dark ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.72)');
     s.setProperty('--pill-bd', u.dark ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.9)');
     s.setProperty('--txt-shadow', u.dark ? '0 2px 14px rgba(0,0,0,.45)' : '0 1px 0 rgba(255,255,255,.7)');
     const meta = document.querySelector('meta[name="theme-color"]');
