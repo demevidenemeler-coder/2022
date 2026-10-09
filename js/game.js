@@ -328,8 +328,10 @@
     const c = L.cell, set = new Set();
     rows.forEach(r => { for (let q = 0; q < N; q++) set.add(r * N + q); });
     cols.forEach(q => { for (let r = 0; r < N; r++) set.add(r * N + q); });
-    // Das ganze Design wechselt, sobald die Combo 6 erreicht (und danach bei 12, 18 …)
-    if (streak % COMBO_SWITCH === 0) autoSwitch(cx, cy);
+    // Das ganze Design wechselt, sobald die Combo 6 erreicht (und danach bei 12, 18 …) oder das Feld komplett leer ist
+    let clean = true;
+    for (let i = 0; i < grid.length; i++) if (grid[i] && !set.has(i)) { clean = false; break; }
+    if (clean || streak % COMBO_SWITCH === 0) autoSwitch(cx, cy);
     const col = theme.colors[to - 1];
     let gain = Math.round(N * 10 * lines * (1 + (lines - 1) * 0.5) * (1 + (streak - 1) * 0.5));
 
