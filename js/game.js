@@ -89,6 +89,8 @@
   const FLIP = 0.2, HOLD = 0.1, OUT = 0.36;
   // Hilfe zum Leerräumen: ab höchstens so vielen Steinen, mit dieser Wahrscheinlichkeit pro neuem Dreier
   const CLEAN_MAX = 14, CLEAN_CHANCE = 0.5;
+  // Design-Wechsel bei jeder so vielen Combo-Stufen
+  const COMBO_SWITCH = 6;
   let grid, pop, grey, hlSet, tmpGrid;
   let tray = [null, null, null];
   let score = 0, shown = 0, streak = 0, sinceClear = 0;
@@ -326,10 +328,8 @@
     const c = L.cell, set = new Set();
     rows.forEach(r => { for (let q = 0; q < N; q++) set.add(r * N + q); });
     cols.forEach(q => { for (let r = 0; r < N; r++) set.add(r * N + q); });
-    // Das ganze Design wechselt nur, wenn dieser Zug das Feld komplett leer räumt
-    let clean = true;
-    for (let i = 0; i < grid.length; i++) if (grid[i] && !set.has(i)) { clean = false; break; }
-    if (clean) autoSwitch(cx, cy);
+    // Das ganze Design wechselt, sobald die Combo 6 erreicht (und danach bei 12, 18 …)
+    if (streak % COMBO_SWITCH === 0) autoSwitch(cx, cy);
     const col = theme.colors[to - 1];
     let gain = Math.round(N * 10 * lines * (1 + (lines - 1) * 0.5) * (1 + (streak - 1) * 0.5));
 
